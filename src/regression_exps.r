@@ -83,12 +83,12 @@ for (c in corpus_list){
               
               
               
-              #print(paste0("/data/dharp/compounds/datasets/",c,"/features_Compound",a,"_withSetting_",p,"_",t,"_",i,"_",j,"_",im,".csv")) 
-              input_df<-read.csv(paste0("/data/dharp/compounds/datasets/",c,"/features_Compound",a,"_withSetting_",p,"_",t,"_",i,"_",j,"_",im,".csv"),sep = '\t')
+              print(paste0("/fs/scratch/users/pageljs/compounding/coha/sparse/features_Compound",a,"_withSetting_",p,"_",t,"_",i,"_",j,"_",im,".csv")) 
+              input_df<-read.csv(paste0("/fs/scratch/users/pageljs/compounding/coha/sparse/features_Compound",a,"_withSetting_",p,"_",t,"_",i,"_",j,"_",im,".csv"),sep = '\t')
               input_df <- input_df %>% distinct()
               
               if (a=="Aware" & i!=10000) {
-                temp_features_df<-read.csv(paste0("/data/dharp/compounds/datasets/",c,"/temporal_Compound",a,"_withSetting_",p,"_",t,"_",i,"_",j,"_",im,".csv"),sep = '\t')
+                temp_features_df<-read.csv(paste0("/fs/scratch/users/pageljs/compounding/coha/sparse/temporal_Compound",a,"_withSetting_",p,"_",t,"_",i,"_",j,"_",im,".csv"),sep = '\t')
                 temp_features_df<-temp_features_df %>% distinct()
                 input_df<-merge(input_df,temp_features_df,all.x=TRUE)
                 input_df <- input_df %>% distinct()
@@ -169,8 +169,8 @@ for (c in corpus_list){
                       break
                     }
                     for (pr in to_predict_list){
-                      if (file.exists(paste0("~/rsquared_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"))) {
-                        print(paste0("~/rsquared_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv exists"))
+                      if (file.exists(paste0("/fs/scratch/users/pageljs/compounding/coha/regression/rsquared_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"))) {
+                        print(paste0("/fs/scratch/users/pageljs/compounding/coha/regression/rsquared_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv exists"))
                         next
                       }
                       
@@ -202,14 +202,18 @@ for (c in corpus_list){
                         #for the last model
                         seeds[[14]]<-sample.int(1000, 1)
                         
-                        
+                       regression_error <- tryCatch( 
+				expr = {
                         elastic_model <- train(trainX,trainY,method = "glmnet",metric = "Rsquared",
                                                trControl = trainControl("cv", number = 10,search="grid",seeds=seeds),tuneGrid = expand.grid(alpha = alpha, lambda = lambda),
                                                preProcess = preprocess_list)
-                        
                         elastic_spearman_model <- train(trainX,trainY,method = "glmnet",metric = "Spearman",
                                                         trControl = trainControl("cv", number = 10,search="grid",seeds=seeds,summaryFunction = caret_spearman),tuneGrid = expand.grid(alpha = alpha, lambda = lambda),
                                                         preProcess = preprocess_list)
+				},
+				error = function(e) {e}
+			)
+		       if (inherits(regression_error, "error")) {next}
                         
                         
                         perf_elastic<-data.frame(npred=length(predictors(elastic_model)),corpus=c,tag=t,ppmi=p,setting=a,timespan=i,cutoff=j,impute=im,dataset=r,pattern=k,features=f,y=pr,n=nrow(trainX),seed=s,ml_algo="elastic",method=getTrainPerf(elastic_model)[,"method"],TrainRsquared=getTrainPerf(elastic_model)[,"TrainRsquared"],TrainSpearman=getTrainPerf(elastic_spearman_model)[,"TrainSpearman"])
@@ -245,13 +249,13 @@ for (c in corpus_list){
                       }
                       rsquared_df<-bind_rows(list_of_rsqr)
                       rsquared_df$cutoff<-as.factor(rsquared_df$cutoff)
-                      write.csv(rsquared_df,paste0("~/rsquared_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
+                      write.csv(rsquared_df,paste0("/fs/scratch/users/pageljs/compounding/coha/regression/rsquared_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
                       list_of_rsqr<-list()
                       if (i==10000) {
                         varimp_10000_df<-bind_rows(list_of_vi_10000)
                         varimp_10000_df$cutoff<-as.factor(varimp_10000_df$cutoff)
                         varimp_10000_df[is.na(varimp_10000_df)] <- 0
-                        write.csv(varimp_10000_df,paste0("~/varimp_10000_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
+                        write.csv(varimp_10000_df,paste0("/fs/scratch/users/pageljs/compounding/coha/regression/varimp_10000_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
                         list_of_vi_10000<-list()
                         
                       }
@@ -259,7 +263,7 @@ for (c in corpus_list){
                         varimp_10_df<-bind_rows(list_of_vi_10)
                         varimp_10_df$cutoff<-as.factor(varimp_10_df$cutoff)
                         varimp_10_df[is.na(varimp_10_df)] <- 0
-                        write.csv(varimp_10_df,paste0("~/varimp_10_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
+                        write.csv(varimp_10_df,paste0("/fs/scratch/users/pageljs/compounding/coha/regression/varimp_10_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
                         list_of_vi_10<-list()
                       }
                       
@@ -267,7 +271,7 @@ for (c in corpus_list){
                         varimp_20_df<-bind_rows(list_of_vi_20)
                         varimp_20_df$cutoff<-as.factor(varimp_20_df$cutoff)
                         varimp_20_df[is.na(varimp_20_df)] <- 0
-                        write.csv(varimp_20_df,paste0("~/varimp_20_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
+                        write.csv(varimp_20_df,paste0("/fs/scratch/users/pageljs/compounding/coha/regression/varimp_20_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
                         list_of_vi_20<-list()
                         
                       }
@@ -275,7 +279,7 @@ for (c in corpus_list){
                         varimp_50_df<-bind_rows(list_of_vi_50)
                         varimp_50_df$cutoff<-as.factor(varimp_50_df$cutoff)
                         varimp_50_df[is.na(varimp_50_df)] <- 0
-                        write.csv(varimp_50_df,paste0("~/varimp_50_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
+                        write.csv(varimp_50_df,paste0("/fs/scratch/users/pageljs/compounding/coha/regression/varimp_50_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
                         list_of_vi_50<-list()
                         
                       }
@@ -283,7 +287,7 @@ for (c in corpus_list){
                         varimp_100_df<-bind_rows(list_of_vi_100)
                         varimp_100_df$cutoff<-as.factor(varimp_100_df$cutoff)
                         varimp_100_df[is.na(varimp_100_df)] <- 0
-                        write.csv(varimp_100_df,paste0("~/varimp_100_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
+                        write.csv(varimp_100_df,paste0("/fs/scratch/users/pageljs/compounding/coha/regression/varimp_100_",c,"_",t,"_",p,"_",a,"_",i,"_",j,"_",im,"_",r,"_",k,"_",f,"_",pr,".csv"),row.names = FALSE)
                         list_of_vi_100<-list()
                         
                       } 

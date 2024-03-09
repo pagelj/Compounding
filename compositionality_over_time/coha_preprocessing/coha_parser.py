@@ -3,8 +3,8 @@ import os
 import spacy
 import re
 import time
-import torch
-from thinc.api import set_gpu_allocator, require_gpu
+#import torch
+#from thinc.api import set_gpu_allocator, require_gpu
 import gc
 import pickle
 import argparse
@@ -12,13 +12,14 @@ import argparse
 parser = argparse.ArgumentParser(description='Program to process the coha pickle files and store the 5-gram files akin to google N-grams V3')
 
 parser.add_argument('--input', type=str,
-                    help='location of the directory with the coha pickle files')
+                    help='location of the directory with the coha sentence pickle files')
 
 parser.add_argument('--output', type=str,
                     help='directory to save dataset in')
 
 parser.add_argument('--gpuid', type=int,
                     help='which gpu to use')
+
 #parser.add_argument('--start_from', type=str,
 #                    help='which decade to resume from')
 
@@ -27,38 +28,57 @@ args = parser.parse_args()
 word='.*'
 
 nn='(?!(?:NOUN|PROPN)).*'
-comp='(?:NOUN|PROPN)\s(?:NOUN|PROPN)'
+#comp='(?:NOUN|PROPN)\s(?:NOUN|PROPN)'
+nn_comp='(?:NOUN|PROPN)\s(?:NOUN|PROPN)'
+an_comp='ADJ\s(?:NOUN|PROPN)'
 
-n1=f'^{comp}\s{nn}\s{comp}$'
-n2=f'^{comp}\s{nn}\s{word}\s{word}$'
-n3=f'^{nn}\s{comp}\s{nn}\s{word}$'
-n4=f'^{word}\s{nn}\s{comp}\s{nn}$'
-n5=f'^{word}\s{word}\s{nn}\s{comp}$'
+#n1=f'^{comp}\s{nn}\s{comp}$'
+#n2=f'^{comp}\s{nn}\s{word}\s{word}$'
+#n3=f'^{nn}\s{comp}\s{nn}\s{word}$'
+#n4=f'^{word}\s{nn}\s{comp}\s{nn}$'
+#n5=f'^{word}\s{word}\s{nn}\s{comp}$'
+n1=f'^{nn_comp}\s{nn}\s{nn_comp}$'
+n2=f'^{nn_comp}\s{nn}\s{word}\s{word}$'
+n3=f'^{nn}\s{nn_comp}\s{nn}\s{word}$'
+n4=f'^{word}\s{nn}\s{nn_comp}\s{nn}$'
+n5=f'^{word}\s{word}\s{nn}\s{nn_comp}$'
+
+a1=f'^{an_comp}\s{nn}\s{an_comp}$'
+a2=f'^{an_comp}\s{nn}\s{word}\s{word}$'
+a3=f'^{nn}\s{an_comp}\s{nn}\s{word}$'
+a4=f'^{word}\s{nn}\s{an_comp}\s{nn}$'
+a5=f'^{word}\s{word}\s{nn}\s{an_comp}$'
+
+c1=f'^{nn_comp}\s{nn}\s{an_comp}$'
+c2=f'^{an_comp}\s{nn}\s{nn_comp}$'
 
 
-spacy.prefer_gpu()
-set_gpu_allocator("pytorch")
-require_gpu(args.gpuid)
+
+
+
+#spacy.prefer_gpu()
+#set_gpu_allocator("pytorch")
+#require_gpu(args.gpuid)
 
 
 _dir = args.input
 
 coha_files = sorted(os.listdir(_dir))
-print(len(coha_files))
+print(f"{len(coha_files)} pickle files to be processed")
 
 
 
 def year_processor(file_id,parser):
     print(file_id)
 
-    cur_year=int(file_id.split('_')[1])
+    cur_year=int(file_id.split('_')[2].rstrip(".txt"))
     sents=cur_decade_pkl[file_id]
     print(f'Number of sentences {len(sents)}')
     print("Running parser")
     
     docs = list(parser.pipe(sents))
     print("Done running parser")
-    torch.cuda.empty_cache()
+    #torch.cuda.empty_cache()
     
     tokens=[]
     lemmas=[]
@@ -102,6 +122,13 @@ def year_processor(file_id,parser):
     cur_df.loc[cur_df.pos_sent.str.contains(n3),'comp_class']=3
     cur_df.loc[cur_df.pos_sent.str.contains(n4),'comp_class']=4
     cur_df.loc[~(cur_df.pos_sent.str.contains(n1))& cur_df.pos_sent.str.contains(n5),'comp_class']=5
+    cur_df.loc[cur_df.pos_sent.str.contains(a1),'comp_class']=6
+    cur_df.loc[~(cur_df.pos_sent.str.contains(a1))& cur_df.pos_sent.str.contains(a2),'comp_class']=7
+    cur_df.loc[cur_df.pos_sent.str.contains(a3),'comp_class']=8
+    cur_df.loc[cur_df.pos_sent.str.contains(a4),'comp_class']=9
+    cur_df.loc[~(cur_df.pos_sent.str.contains(a1))& cur_df.pos_sent.str.contains(a5),'comp_class']=10
+    cur_df.loc[cur_df.pos_sent.str.contains(c1),'comp_class']=11
+    cur_df.loc[cur_df.pos_sent.str.contains(c2),'comp_class']=12
     cur_df['count']=1
     cur_df=cur_df.groupby(['lemma_pos','tokens','year','comp_class','num_comp','comp_ner_sent'])['count'].sum().to_frame().reset_index()
     print("\n")
@@ -112,7 +139,7 @@ def year_processor(file_id,parser):
 def part_processor(df,cur_decade):
     file_list=df.fname.to_list()
     cur_time=time.time()
-    parser = spacy.load('en_core_web_trf')
+    parser = spacy.load('en_core_web_lg')
     parser.add_pipe("doc_cleaner")
     parser.max_length=10_000_000
     
@@ -124,7 +151,7 @@ def part_processor(df,cur_decade):
         df_list.append(year_processor(cur_file,parser))
     
     del parser
-    torch.cuda.empty_cache()
+    #torch.cuda.empty_cache()
     gc.collect()
     cur_decade_df=pd.concat(df_list,ignore_index=True,sort=True)
     print(f'Shape of dataframe before grouping :{cur_decade_df.shape}')
@@ -174,7 +201,7 @@ for cur_pkl in coha_files:
         lastvalue = thisvalue
     cur_decade_df['fcat']=labels
     
-    print(f'Number of interations {cur_decade_df.fcat.nunique()}')
+    print(f'Number of iterations {cur_decade_df.fcat.nunique()}')
     
     
     cur_decade_df=cur_decade_df.groupby('fcat').apply(lambda x: part_processor(x,cur_decade))

@@ -4,3 +4,4 @@ compositionality_over_time/comp-datasets-release/
 compositionality_over_time/comp-datasets-release.tar.gz
 compositionality_over_time/Plots
 *.pkl
+src/last.dump.rda
