@@ -3,47 +3,29 @@ import numpy as np
 import argparse
 import time
 import pickle as pkl
-
-from itertools import product
-from functools import reduce
-import glob
 import os
 
-import seaborn as sns
-sns.set(style="whitegrid", font_scale = 2.5)
-sns.set_context(rc={"lines.markersize": 17, "lines.linewidth": 2})
-
-import matplotlib.pyplot as plt
 from sklearn.impute import SimpleImputer
 
-parser = argparse.ArgumentParser(description='Compute features from sparse dataset')
+parser = argparse.ArgumentParser(description='Compute features from sparse dataset for coha version')
 
 parser.add_argument('--inputdir',type=str,
-                    help='Provide directory where features are located')
+                    help='Provide directory where datasets are located')
+parser.add_argument('--outputdir',type=str,
+                    help='Where should the output be stored?')
 parser.add_argument('--reddy90', type=str,
                     help='Path to Reddy data')
 parser.add_argument('--cordeiro90', type=str,
                     help='Path to Cordeiro 90 data')
 parser.add_argument('--cordeiro100', type=str,
                     help='Path to Cordeiro 100 data')
-parser.add_argument('--outputdir',type=str,
-                    help='Where should the output be stored?')
 parser.add_argument('--tag', action='store_true',
                     help='Should the POS tag be kept?')
 parser.add_argument('--ppmi', action='store_true',
                     help='Should co-occurence matrix be converted to PPMI values')
-parser.add_argument('--plot', action='store_true',
-                    help='Should plots be saved')
+
 
 args = parser.parse_args()
-
-
-reddy_df=pd.read_csv(args.reddy90,sep='\t')
-reddy_df['source']='reddy'
-cordeiro90_df=pd.read_csv(args.cordeiro90,sep='\t')
-cordeiro90_df['source']='cordeiro90'
-cordeiro100_df=pd.read_csv(args.cordeiro100,sep='\t')
-cordeiro100_df['source']='cordeiro100'
 
 
 def testset_tagger(df):
@@ -53,16 +35,8 @@ def testset_tagger(df):
     copy_df_1=df.copy()
     copy_df_1.modifier=copy_df_1.modifier+'_NOUN'
     copy_df_1['head']=copy_df_1['head']+'_NOUN'
-
-
     
-    ### PROPN PROPN    
-
-    copy_df_4=df.copy()
-    copy_df_4.modifier=copy_df_4.modifier+'_PROPN'
-    copy_df_4['head']=copy_df_4['head']+'_PROPN'
     
-   
     ### ADJ/NOUN NOUN
     
     copy_df_5=df.copy()
@@ -71,31 +45,9 @@ def testset_tagger(df):
     copy_df_5.loc[copy_df_5.is_adj==False,"modifier"]+="_NOUN"
     copy_df_5['head']=copy_df_5['head']+'_NOUN'   
     
-    
-
-    
-    #### ADJ/PROPN PROPN
-    
-    copy_df_8=df.copy()
-    copy_df_8.loc[copy_df_8.is_adj==True,"modifier"]+="_ADJ"
-    copy_df_8.loc[copy_df_8.is_adj==False,"modifier"]+="_PROPN"
-    copy_df_8['head']=copy_df_8['head']+'_PROPN' 
-    
-    
-    complete_df=pd.concat([copy_df_1,copy_df_4,copy_df_5,copy_df_8],ignore_index=True)
-                           
+    complete_df=pd.concat([copy_df_1,copy_df_5],ignore_index=True)
     return complete_df
     
-comp_ratings_df=pd.concat([reddy_df,cordeiro90_df,cordeiro100_df])
-#comp_ratings_df.drop_duplicates(inplace=True)
-if args.tag:
-    comp_ratings_df=testset_tagger(comp_ratings_df)
-    
-comp_ratings_df=pd.concat([reddy_df,cordeiro90_df,cordeiro100_df])
-#comp_ratings_df.drop_duplicates(inplace=True)
-if args.tag:
-    comp_ratings_df=testset_tagger(comp_ratings_df)
-
 
 def process_time_compound(df):
 
@@ -106,7 +58,17 @@ def process_time_compound(df):
     df=df.groupby(['modifier','head','time','context'])['count'].sum().to_frame()
     df.reset_index(inplace=True)
     return df
-        
+
+def process_time_constituent(df,ctype='word'):
+            
+    df['time']=df['year'] - df['year']%temporal
+          
+    df=df.groupby([ctype,'time','context'])['count'].sum().to_frame()
+
+    df.reset_index(inplace=True)
+    
+    return df
+    
 def process_cutoff_compound(df):
 
     df=df.loc[df.groupby(['modifier','head','time'])['count'].transform('sum').gt(cutoff)]
@@ -118,16 +80,6 @@ def process_cutoff_constituent(df,ctype='word'):
     df=df.loc[df.groupby([ctype,'time'])['count'].transform('sum').gt(cutoff)]    
     return df
 
-
-def process_constituent(df,ctype='word'):
-            
-    df['time']=df['year'] - df['year']%temporal
-          
-    df=df.groupby([ctype,'time','context'])['count'].sum().to_frame()
-
-    df.reset_index(inplace=True)
-    
-    return df
 
 
 def ppmi(ppmi_df):
@@ -296,8 +248,6 @@ def calculate_compound_features(compounds,modifiers,heads,all_comps,not_found_co
     
     head_time_counts=heads.groupby(['time'])['count'].sum().to_frame()
     head_time_counts.columns=['head_time_count']
-    
-    
     
     
     frequency_feat=pd.merge(XY.reset_index(),X_star.reset_index(),on=['modifier','time'])
@@ -501,275 +451,6 @@ def calculate_cosine_features(compounds,modifiers,heads,not_found_compounds_df):
     return cosine_sim_feat
 
 
-def plotting(compound_df,sim_df):
-    
-    print('Plotting')
-    plotdir=args.plotdir
-        
-    compounds_complete_index=compound_df.index
-    print(len(compounds_complete_index))
-
-    compound_pivot=pd.pivot_table(sim_df,columns='time',index=['modifier','head'],values='sim_bw_constituents')
-    compounds_decades_all_index=compound_pivot.dropna().index
-    print(len(compounds_decades_all_index))
-
-    columns_names_1900_end=compound_pivot.columns[compound_pivot.columns>=1900]
-    compounds_1900_end_index=compound_pivot.loc[:,columns_names_1900_end].dropna().index
-    print(len(compounds_1900_end_index))
-
-    columns_names_1950_end=compound_pivot.columns[compound_pivot.columns>=1950]
-    compounds_1950_end_index=compound_pivot.loc[:,columns_names_1950_end].dropna().index
-    print(len(compounds_1950_end_index))
-
-    columns_names_2000_end=compound_pivot.columns[compound_pivot.columns>=2000]
-    compounds_2000_end_index=compound_pivot.loc[:,columns_names_2000_end].dropna().index
-    print(len(compounds_2000_end_index))
-
-    compound_index_lst=[compounds_decades_all_index,compounds_1900_end_index,compounds_1950_end_index,compounds_2000_end_index]
-    tags_lst=['all','1900','1950','2000']
-
-
-    for cur_index_lst,cur_tag in zip(compound_index_lst,tags_lst):
-        if cur_tag=='1950' and temporal==100:
-            continue
-
-        print(cur_tag)
-        if str(cur_tag).isdigit():
-            if cur_tag=='1950' and temporal==20:
-                cur_decades = [str(year) for year in list(range(1940, 2010, temporal))]
-            else:
-                cur_decades = [str(year) for year in list(range(int(cur_tag), 2010, temporal))]
-            cur_columns_regex = re.compile(".+({})$".format("|".join(cur_decades)))
-            cur_df = compound_df.loc[cur_index_lst,[col for col in compound_df if re.search(cur_columns_regex, col)]]
-        else:
-            cur_df=compound_df.loc[cur_index_lst]
-        
-        if cur_df.shape[0]==0:
-            print("Nothing to plot")
-            continue
-        else:
-
-            print('All compounds')
-            print('Raw frequency features')
-            comp_freq_cols=[col for col in cur_df if col.startswith('comp_freq')]
-            mod_freq_cols=[col for col in cur_df if col.startswith('mod_freq')]
-            head_freq_cols=[col for col in cur_df if col.startswith('head_freq')]
-            raw_freq_cols=comp_freq_cols+mod_freq_cols+head_freq_cols
-
-            plot_freq_df=cur_df.reset_index().melt(id_vars=['modifier', 'head'],value_vars=raw_freq_cols)
-            plot_freq_df[['variable','time']]=plot_freq_df['variable'].str.split(':',expand=True)
-
-
-            plt.figure(figsize=(15,15))
-            g=sns.lineplot(x="time", y="value", hue="variable",data=plot_freq_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-            g.legend(loc='upper left')
-            g.set_xlabel("Time")
-            g.set_ylabel("Frequency")
-            plt.setp(g.get_xticklabels(), rotation=60)
-            plt.savefig(f'{plotdir}/freq_{cur_tag}_wo_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-            
-            
-            print('Log frequency features')
-
-            comp_tf_cols=[col for col in cur_df if col.startswith('comp_tf')]
-            mod_tf_cols=[col for col in cur_df if col.startswith('mod_tf')]
-            head_tf_cols=[col for col in cur_df if col.startswith('head_tf')]
-            log_freq_cols=comp_tf_cols+mod_tf_cols+head_tf_cols
-
-            plot_tf_df=cur_df.reset_index().melt(id_vars=['modifier', 'head'],value_vars=log_freq_cols)
-            plot_tf_df[['variable','time']]=plot_tf_df['variable'].str.split(':',expand=True)
-
-            plt.figure(figsize=(15,15))
-            g=sns.lineplot(x="time", y="value", hue="variable",data=plot_tf_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-            g.legend(loc='upper left')
-            g.set_xlabel("Time")
-            g.set_ylabel("Log Frequency")
-            plt.setp(g.get_xticklabels(), rotation=60)
-            plt.savefig(f'{plotdir}/log_freq_{cur_tag}_wo_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-            
-            print('Family size')
-
-            mod_family_size_cols=[col for col in cur_df if col.startswith('mod_family_size')]
-            head_family_size_cols=[col for col in cur_df if col.startswith('head_family_size')]
-            fam_size_cols=mod_family_size_cols+head_family_size_cols
-
-            plot_family_size_df=cur_df.reset_index().melt(id_vars=['modifier', 'head'],value_vars=fam_size_cols)
-            plot_family_size_df[['variable','time']]=plot_family_size_df['variable'].str.split(':',expand=True)
-
-            plt.figure(figsize=(15,15))
-            g=sns.lineplot(x="time", y="value", hue="variable",data=plot_family_size_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-            g.legend(loc='upper left')
-            g.set_xlabel("Time")
-            g.set_ylabel("Family Size")
-            plt.setp(g.get_xticklabels(), rotation=60)
-            plt.savefig(f'{plotdir}/family_size_{cur_tag}_wo_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-            
-            print('Productivity')
-
-            mod_prod_cols=[col for col in cur_df if col.startswith('mod_prod')]
-            head_prod_cols=[col for col in cur_df if col.startswith('head_prod')]
-            prod_cols=mod_prod_cols+head_prod_cols
-
-
-            plot_prod_df=cur_df.reset_index().melt(id_vars=['modifier', 'head'],value_vars=prod_cols)
-            plot_prod_df[['variable','time']]=plot_prod_df['variable'].str.split(':',expand=True)
-
-            plt.figure(figsize=(15,15))
-            g=sns.lineplot(x="time", y="value", hue="variable",data=plot_prod_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-            g.legend(loc='upper left')
-            g.set_xlabel("Time")
-            g.set_ylabel("Productivity")
-            plt.setp(g.get_xticklabels(), rotation=60)
-            plt.savefig(f'{plotdir}/prod_{cur_tag}_wo_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-            
-            print('Information Theory')
-
-            log_ratio_cols=[col for col in cur_df if col.startswith('log_ratio')]
-            local_mi_cols=[col for col in cur_df if col.startswith('local_mi')]
-
-            plot_log_ratio_df=cur_df.reset_index().melt(id_vars=['modifier', 'head'],value_vars=log_ratio_cols)
-            plot_log_ratio_df[['variable','time']]=plot_log_ratio_df['variable'].str.split(':',expand=True)
-
-            plt.figure(figsize=(15,15))
-            g=sns.lineplot(x="time", y="value", hue="variable",data=plot_log_ratio_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-            g.legend(loc='upper left')
-            g.set_xlabel("Time")
-            g.set_ylabel("Log Ratio")
-            plt.setp(g.get_xticklabels(), rotation=60)
-            plt.savefig(f'{plotdir}/log_ratio_{cur_tag}_wo_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-
-            
-            plot_lmi_df=cur_df.reset_index().melt(id_vars=['modifier', 'head'],value_vars=local_mi_cols)
-            plot_lmi_df[['variable','time']]=plot_lmi_df['variable'].str.split(':',expand=True)
-
-            plt.figure(figsize=(15,15))
-            g=sns.lineplot(x="time", y="value", hue="variable",data=plot_lmi_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-            g.legend(loc='upper left')
-            g.set_xlabel("Time")
-            g.set_ylabel("Local MI")
-            plt.setp(g.get_xticklabels(), rotation=60)
-            plt.savefig(f'{plotdir}/lmi_{cur_tag}_wo_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-            
-            
-            print('Cosine')
-            sim_with_modifier_cols=[col for col in cur_df if col.startswith('sim_with_modifier')]
-            sim_with_head_cols=[col for col in cur_df if col.startswith('sim_with_head')]
-            sim_bw_constituents_cols=[col for col in cur_df if col.startswith('sim_bw_constituents')]
-            cosine_cols=sim_with_modifier_cols+sim_with_head_cols+sim_bw_constituents_cols
-
-            plot_cosine_df=cur_df.reset_index().melt(id_vars=['modifier', 'head'],value_vars=cosine_cols)
-            plot_cosine_df[['variable','time']]=plot_cosine_df['variable'].str.split(':',expand=True)
-
-            plt.figure(figsize=(15,15))
-            g=sns.lineplot(x="time", y="value", hue="variable",data=plot_cosine_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-            g.legend(loc='upper right')
-            g.set_xlabel("Time")
-            g.set_ylabel("Cosine Similarity")
-            plt.setp(g.get_xticklabels(), rotation=60)
-            plt.savefig(f'{plotdir}/cosine_{cur_tag}_wo_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-            
-            
-            
-            print('Ratings only dataset')
-            cur_ratings_df=cur_df.reset_index().merge(ratings_df,on=['modifier','head'])
-            print(cur_ratings_df.shape)
-            
-            if cur_ratings_df.shape[0]==0:
-                print("Nothing to plot")
-                continue
-                
-            else:
-                
-                print('Raw frequency features')
-                plot_freq_ratings_df=cur_ratings_df.melt(id_vars=['modifier', 'head'],value_vars=raw_freq_cols)
-                plot_freq_ratings_df[['variable','time']]=plot_freq_ratings_df['variable'].str.split(':',expand=True)
-                plt.figure(figsize=(15,15))
-                g=sns.lineplot(x="time", y="value", hue="variable",data=plot_freq_ratings_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-                g.legend(loc='upper left')
-                g.set_xlabel("Time")
-                g.set_ylabel("Frequency")
-                plt.setp(g.get_xticklabels(), rotation=60)
-                plt.savefig(f'{plotdir}/freq_{cur_tag}_with_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-
-                print('Log frequency features')
-
-                plot_tf_ratings_df=cur_ratings_df.melt(id_vars=['modifier', 'head'],value_vars=log_freq_cols)
-                plot_tf_ratings_df[['variable','time']]=plot_tf_ratings_df['variable'].str.split(':',expand=True)
-                plt.figure(figsize=(15,15))
-                g=sns.lineplot(x="time", y="value", hue="variable",data=plot_tf_ratings_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-                g.legend(loc='upper left')
-                g.set_xlabel("Time")
-                g.set_ylabel("Log Frequency")
-                plt.setp(g.get_xticklabels(), rotation=60)
-                plt.savefig(f'{plotdir}/log_freq_{cur_tag}_with_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-
-                print('Family size')
-
-                plot_family_size_ratings_df=cur_ratings_df.melt(id_vars=['modifier', 'head'],value_vars=fam_size_cols)
-                plot_family_size_ratings_df[['variable','time']]=plot_family_size_ratings_df['variable'].str.split(':',expand=True)
-                plt.figure(figsize=(15,15))
-                g=sns.lineplot(x="time", y="value", hue="variable",data=plot_family_size_ratings_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-                g.legend(loc='upper left')
-                g.set_xlabel("Time")
-                g.set_ylabel("Family Size")
-                plt.setp(g.get_xticklabels(), rotation=60)
-                plt.savefig(f'{plotdir}/family_size_{cur_tag}_with_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-
-                print('Productivity')
-
-                plot_prod_ratings_df=cur_ratings_df.melt(id_vars=['modifier', 'head'],value_vars=prod_cols)
-                plot_prod_ratings_df[['variable','time']]=plot_prod_ratings_df['variable'].str.split(':',expand=True)
-                plt.figure(figsize=(15,15))
-                g=sns.lineplot(x="time", y="value", hue="variable",data=plot_prod_ratings_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-                g.legend(loc='upper left')
-                g.set_xlabel("Time")
-                g.set_ylabel("Productivity")
-                plt.setp(g.get_xticklabels(), rotation=60)
-                plt.savefig(f'{plotdir}/prod_{cur_tag}_with_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-
-                print('Information Theory')
-                
-                plot_log_ratio_ratings_df=cur_ratings_df.melt(id_vars=['modifier', 'head'],value_vars=log_ratio_cols)
-                plot_log_ratio_ratings_df[['variable','time']]=plot_log_ratio_ratings_df['variable'].str.split(':',expand=True)
-
-                plt.figure(figsize=(15,15))
-                g=sns.lineplot(x="time", y="value", hue="variable",data=plot_log_ratio_ratings_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-                g.legend(loc='upper left')
-                g.set_xlabel("Time")
-                g.set_ylabel("Log Ratio")
-                plt.setp(g.get_xticklabels(), rotation=60)
-                plt.savefig(f'{plotdir}/log_ratio_{cur_tag}_with_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-
-                
-                plot_lmi_ratings_df=cur_ratings_df.melt(id_vars=['modifier', 'head'],value_vars=local_mi_cols)
-                plot_lmi_ratings_df[['variable','time']]=plot_lmi_ratings_df['variable'].str.split(':',expand=True)
-
-                plt.figure(figsize=(15,15))
-                g=sns.lineplot(x="time", y="value", hue="variable",data=plot_lmi_ratings_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-                g.legend(loc='upper left')
-                g.set_xlabel("Time")
-                g.set_ylabel("Local MI")
-                plt.setp(g.get_xticklabels(), rotation=60)
-                plt.savefig(f'{plotdir}/lmi_{cur_tag}_with_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-
-
-                print('Cosine features')
-
-                plot_cosine_ratings_df=cur_ratings_df.melt(id_vars=['modifier', 'head'],value_vars=cosine_cols)
-                plot_cosine_ratings_df[['variable','time']]=plot_cosine_ratings_df['variable'].str.split(':',expand=True)
-                plt.figure(figsize=(15,15))
-                g=sns.lineplot(x="time", y="value", hue="variable",data=plot_cosine_ratings_df,palette="Dark2", marker='o',linewidth=1,dashes=False,markers=True)#,err_style="bars", ci=68)
-                g.legend(loc='upper left')
-                g.set_xlabel("Time")
-                g.set_ylabel("Cosine Similarity")
-                plt.setp(g.get_xticklabels(), rotation=60)
-                plt.savefig(f'{plotdir}/cosine_{cur_tag}_with_ratings_{comp_str}_{tag_str}_{temp_cutoff_str}.png',dpi=300)
-                
-                print('Saving the dataset')
-
-                cur_ratings_df.to_csv(f'{args.outputdir}/features_{cur_tag}_{comp_str}_{tag_str}_{temp_cutoff_str}.csv',sep='\t',index=False)
-
-
 def calculate_setting_similarity(compounds_aware,modifiers_aware,heads_aware,compounds_agnostic,modifiers_agnostic,heads_agnostic,compound_list_df):
     
     mod_awr_cols=modifiers_aware.columns.tolist()
@@ -946,6 +627,23 @@ def merge_comp_ratings(features_df):
     
     return cur_ratings_df_na,cur_ratings_df_med
 
+
+reddy_df=pd.read_csv(args.reddy90,sep='\t')
+reddy_df['source']='reddy'
+cordeiro90_df=pd.read_csv(args.cordeiro90,sep='\t')
+cordeiro90_df['source']='cordeiro90'
+cordeiro100_df=pd.read_csv(args.cordeiro100,sep='\t')
+cordeiro100_df['source']='cordeiro100'
+
+comp_ratings_df=pd.concat([reddy_df,cordeiro90_df,cordeiro100_df])
+#comp_ratings_df.drop_duplicates(inplace=True)
+if args.tag:
+    comp_ratings_df=testset_tagger(comp_ratings_df)
+    
+comp_ratings_df=pd.concat([reddy_df,cordeiro90_df,cordeiro100_df])
+if args.tag:
+    comp_ratings_df=testset_tagger(comp_ratings_df)
+
 cutoff_list=[0,10,50,100,500,1000]
 temporal_list=[10000,10,20,50,100]
 
@@ -999,13 +697,13 @@ for temporal in temporal_list:
         
     temporal_phrases=process_time_compound(complete_phrases)
 
-    constituents=process_constituent(complete_words,'word')
+    constituents=process_time_constituent(complete_words,'word')
     print('Done reading words')
         
-    modifiers_aware=process_constituent(complete_modifiers,'modifier')
+    modifiers_aware=process_time_constituent(complete_modifiers,'modifier')
     print('Done reading modifiers')
 
-    heads_aware=process_constituent(complete_heads,'head')
+    heads_aware=process_time_constituent(complete_heads,'head')
     print('Done reading heads')
         
     for cutoff in cutoff_list:
