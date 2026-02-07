@@ -39,6 +39,9 @@ def compound_processor(sent_doc) -> pd.DataFrame:
         deps = [token.dep_ if token.dep_ =="compound" else "noncomp" for token in chunk]
         ents = [token.ent_type_ if token.ent_type_ else "NOTNER" for token in tokens]
 
+        chunk_start = chunk.start
+        chunk_end = chunk.end
+
         if len(tokens) > 1:
             for i in range(len(tokens) - 1):
                 pos_pair = [pos_tags[i], pos_tags[i+1]]
@@ -72,6 +75,13 @@ def compound_processor(sent_doc) -> pd.DataFrame:
                         else:
                             chunk_type = "compound"
 
+                        # Context: all outside the chunk
+                        context = [
+                            f"{tok.lemma_}_{tok.pos_}"
+                            for j, tok in enumerate(sent_doc)
+                            if j < chunk_start or j >= chunk_end
+                        ]
+
                         rows.append({
                             'compound_lemma_wo_pos': compound_lemma_wo_pos,
                             'compound_token': compound_token,
@@ -79,7 +89,8 @@ def compound_processor(sent_doc) -> pd.DataFrame:
                             'chunk_pos': chunk_pos,
                             'compound_dep': compound_dep,
                             'compound_ner': compound_ner,
-                            'chunk_type': chunk_type
+                            'context': context,
+                            'chunk_type': chunk_type,
                         })
     if not rows:
         return None
@@ -200,7 +211,9 @@ def parse_coha_plus(args: argparse.ArgumentParser) -> None:
     senter = spacy.load('en_core_web_lg')
 
     # Define decades that were already processed
-    already_processed = [1840, 1920, 1930, 1980, 1990]
+    #already_processed = []
+    already_processed = [1820, 1830, 1840, 1860, 1870, 1880, 1900, 1910, 1920, 1930, 1940, 1950, 1960, 1980, 1990, 2000]
+    #already_processed = [1820, 1830, 1840, 1850, 1860, 1870, 1880, 1890, 1900, 1910, 1920, 1930, 1940, 1950, 1970, 1980, 1990, 2000, 2010]
 
     # List all pickle files
 
@@ -246,13 +259,10 @@ def parse_coha_plus(args: argparse.ArgumentParser) -> None:
 
                 if args.unit == "phrases":
                     domain_df[['modifier','head']]=domain_df.compound_lemma_wo_pos.str.split(' ',expand=True)
-
-                if args.unit == "phrases":
                     domain_df=domain_df.loc[domain_df.modifier.isin(modifier_list)]
                     domain_df=domain_df.loc[domain_df['head'].isin(head_list)]
-                if args.unit != "compounds":
-                    domain_df=domain_df.explode(['context']).fillna("nan")
-                    domain_df=domain_df.loc[domain_df.context.str.contains(r"^.+_(?:PROPN|NOUN|ADJ|VERB|NUM|ADV)$")]
+                domain_df=domain_df.explode(['context']).fillna("nan")
+                domain_df=domain_df.loc[domain_df.context.str.contains(r"^.+_(?:PROPN|NOUN|ADJ|VERB|NUM|ADV)$")]
                 domain_df['time'] = decade
                 domain_df['domain'] = domain
                 if args.unit == "phrases":
@@ -260,11 +270,10 @@ def parse_coha_plus(args: argparse.ArgumentParser) -> None:
                 elif args.unit == "words":
                     domain_df=domain_df.groupby(['word_token','word_lemma','time','domain','pos','context']).size().to_frame()
                 elif args.unit == "compounds":
-                    domain_df=domain_df.groupby(['compound_token','compound_lemma','time','domain','chunk_pos','compound_dep','compound_ner','chunk_type']).size().to_frame()
+                    domain_df=domain_df.groupby(['compound_token','compound_lemma','time','domain','chunk_pos','compound_dep','compound_ner','context','chunk_type']).size().to_frame()
                 domain_df.columns=['count']
                 domain_df=domain_df.reset_index()
-                if args.unit != "compounds":
-                    domain_df=domain_df.loc[domain_df.context.str.contains('@@@@@@@@@@')==False]
+                domain_df=domain_df.loc[domain_df.context.str.contains('@@@@@@@@@@')==False]
 
                 all_dfs.append(domain_df)
 
